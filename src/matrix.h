@@ -2,6 +2,7 @@
 #define MATRIX_H
 #include "darknet.h"
 
+model do_kmeans(matrix data, int k);
 matrix copy_matrix(matrix m);
 void print_matrix(matrix m);
 

@@ -534,6 +534,10 @@ typedef struct matrix{
     float **vals;
 } matrix;
 
+typedef struct {
+    int *assignments;
+    matrix centers;
+} model;
 
 typedef struct{
     int w, h;

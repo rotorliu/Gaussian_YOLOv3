@@ -1,5 +1,13 @@
 #include "darknet.h"
+#include "network.h"
+#include "region_layer.h"
+#include "cost_layer.h"
+#include "utils.h"
+#include "parser.h"
+#include "box.h"
 #include <sys/stat.h>
+
+int check_mistakes = 0;
 
 static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
 
@@ -727,6 +735,147 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
     }
 }
 
+void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int show)
+{
+    printf("\n num_of_clusters = %d, width = %d, height = %d \n", num_of_clusters, width, height);
+    if (width < 0 || height < 0) {
+        printf("Usage: darknet detector calc_anchors data/voc.data -num_of_clusters 9 -width 416 -height 416 \n");
+        printf("Error: set width and height \n");
+        return;
+    }
+
+    //float pointsdata[] = { 1,1, 2,2, 6,6, 5,5, 10,10 };
+    float* rel_width_height_array = (float*)calloc(1000, sizeof(float));
+
+
+    list *options = read_data_cfg(datacfg);
+    char *train_images = option_find_str(options, "train", "data/train.list");
+    list *plist = get_paths(train_images);
+    int number_of_images = plist->size;
+    char **paths = (char **)list_to_array(plist);
+
+    srand(time(0));
+    int number_of_boxes = 0;
+    printf(" read labels from %d images \n", number_of_images);
+
+    int i, j;
+    for (i = 0; i < number_of_images; ++i) {
+        char *path = paths[i];
+        char labelpath[4096];
+        replace_image_to_label(path, labelpath);
+
+        int num_labels = 0;
+        box_label *truth = read_boxes(labelpath, &num_labels);
+        //printf(" new path: %s \n", labelpath);
+        char buff[1024];
+        for (j = 0; j < num_labels; ++j)
+        {
+            if (truth[j].x > 1 || truth[j].x <= 0 || truth[j].y > 1 || truth[j].y <= 0 ||
+                truth[j].w > 1 || truth[j].w <= 0 || truth[j].h > 1 || truth[j].h <= 0)
+            {
+                printf("\n\nWrong label: %s - j = %d, x = %f, y = %f, width = %f, height = %f \n",
+                    labelpath, j, truth[j].x, truth[j].y, truth[j].w, truth[j].h);
+                sprintf(buff, "echo \"Wrong label: %s - j = %d, x = %f, y = %f, width = %f, height = %f\" >> bad_label.list",
+                    labelpath, j, truth[j].x, truth[j].y, truth[j].w, truth[j].h);
+                system(buff);
+                if (check_mistakes) getchar();
+            }
+            number_of_boxes++;
+            rel_width_height_array = (float*)realloc(rel_width_height_array, 2 * number_of_boxes * sizeof(float));
+            rel_width_height_array[number_of_boxes * 2 - 2] = truth[j].w * width;
+            rel_width_height_array[number_of_boxes * 2 - 1] = truth[j].h * height;
+            printf("\r loaded \t image: %d \t box: %d", i + 1, number_of_boxes);
+        }
+    }
+    printf("\n all loaded. \n");
+    printf("\n calculating k-means++ ...");
+
+    matrix boxes_data;
+    model anchors_data;
+    boxes_data = make_matrix(number_of_boxes, 2);
+
+    printf("\n");
+    for (i = 0; i < number_of_boxes; ++i) {
+        boxes_data.vals[i][0] = rel_width_height_array[i * 2];
+        boxes_data.vals[i][1] = rel_width_height_array[i * 2 + 1];
+        //if (w > 410 || h > 410) printf("i:%d,  w = %f, h = %f \n", i, w, h);
+    }
+
+    // Is used: distance(box, centroid) = 1 - IoU(box, centroid)
+
+    // K-means
+    anchors_data = do_kmeans(boxes_data, num_of_clusters);
+
+    qsort((void*)anchors_data.centers.vals, num_of_clusters, 2 * sizeof(float), (__compar_fn_t)anchors_data_comparator);
+
+    //gen_anchors.py = 1.19, 1.99, 2.79, 4.60, 4.53, 8.92, 8.06, 5.29, 10.32, 10.66
+    //float orig_anch[] = { 1.19, 1.99, 2.79, 4.60, 4.53, 8.92, 8.06, 5.29, 10.32, 10.66 };
+
+    printf("\n");
+    float avg_iou = 0;
+    for (i = 0; i < number_of_boxes; ++i) {
+        float box_w = rel_width_height_array[i * 2]; //points->data.fl[i * 2];
+        float box_h = rel_width_height_array[i * 2 + 1]; //points->data.fl[i * 2 + 1];
+                                                         //int cluster_idx = labels->data.i[i];
+        int cluster_idx = 0;
+        float min_dist = FLT_MAX;
+        float best_iou = 0;
+        for (j = 0; j < num_of_clusters; ++j) {
+            float anchor_w = anchors_data.centers.vals[j][0];   // centers->data.fl[j * 2];
+            float anchor_h = anchors_data.centers.vals[j][1];   // centers->data.fl[j * 2 + 1];
+            float min_w = (box_w < anchor_w) ? box_w : anchor_w;
+            float min_h = (box_h < anchor_h) ? box_h : anchor_h;
+            float box_intersect = min_w*min_h;
+            float box_union = box_w*box_h + anchor_w*anchor_h - box_intersect;
+            float iou = box_intersect / box_union;
+            float distance = 1 - iou;
+            if (distance < min_dist) min_dist = distance, cluster_idx = j, best_iou = iou;
+        }
+
+        float anchor_w = anchors_data.centers.vals[cluster_idx][0]; //centers->data.fl[cluster_idx * 2];
+        float anchor_h = anchors_data.centers.vals[cluster_idx][1]; //centers->data.fl[cluster_idx * 2 + 1];
+        if (best_iou > 1 || best_iou < 0) { // || box_w > width || box_h > height) {
+            printf(" Wrong label: i = %d, box_w = %f, box_h = %f, anchor_w = %f, anchor_h = %f, iou = %f \n",
+                i, box_w, box_h, anchor_w, anchor_h, best_iou);
+        }
+        else avg_iou += best_iou;
+    }
+    avg_iou = 100 * avg_iou / number_of_boxes;
+    printf("\n avg IoU = %2.2f %% \n", avg_iou);
+
+    char buff[1024];
+    FILE* fw = fopen("anchors.txt", "wb");
+    if (fw) {
+        printf("\nSaving anchors to the file: anchors.txt \n");
+        printf("anchors = ");
+        for (i = 0; i < num_of_clusters; ++i) {
+            float anchor_w = anchors_data.centers.vals[i][0]; //centers->data.fl[i * 2];
+            float anchor_h = anchors_data.centers.vals[i][1]; //centers->data.fl[i * 2 + 1];
+            if (width > 32) sprintf(buff, "%3.0f,%3.0f", anchor_w, anchor_h);
+            else sprintf(buff, "%2.4f,%2.4f", anchor_w, anchor_h);
+            printf("%s", buff);
+            fwrite(buff, sizeof(char), strlen(buff), fw);
+            if (i + 1 < num_of_clusters) {
+                fwrite(", ", sizeof(char), 2, fw);
+                printf(", ");
+            }
+        }
+        printf("\n");
+        fclose(fw);
+    }
+    else {
+        printf(" Error: file anchors.txt can't be open \n");
+    }
+
+    if (show) {
+#ifdef OPENCV
+        show_acnhors(number_of_boxes, num_of_clusters, rel_width_height_array, anchors_data, width, height);
+#endif // OPENCV
+    }
+    free(rel_width_height_array);
+
+    getchar();
+}
 
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen)
 {
@@ -962,6 +1111,9 @@ void run_detector(int argc, char **argv)
     float hier_thresh = find_float_arg(argc, argv, "-hier", .5);
     int cam_index = find_int_arg(argc, argv, "-c", 0);
     int frame_skip = find_int_arg(argc, argv, "-s", 0);
+    int show = find_arg(argc, argv, "-show");
+    check_mistakes = find_arg(argc, argv, "-check_mistakes");
+    int num_of_clusters = find_int_arg(argc, argv, "-num_of_clusters", 5);
     int avg = find_int_arg(argc, argv, "-avg", 3);
     if(argc < 4){
         fprintf(stderr, "usage: %s %s [train/test/valid] [cfg] [weights (optional)]\n", argv[0], argv[1]);
@@ -1007,6 +1159,7 @@ void run_detector(int argc, char **argv)
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if(0==strcmp(argv[2], "valid2")) validate_detector_flip(datacfg, cfg, weights, outfile);
     else if(0==strcmp(argv[2], "recall")) validate_detector_recall(cfg, weights);
+    else if(0==strcmp(argv[2], "calc_anchors")) calc_anchors(datacfg, num_of_clusters, width, height, show);
     else if(0==strcmp(argv[2], "demo")) {
         list *options = read_data_cfg(datacfg);
         int classes = option_find_int(options, "classes", 20);
