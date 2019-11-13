@@ -30,7 +30,7 @@ imgpath = "/hdd/data/BDD/coco_navinfo/images/"   # image file path
     #os.mkdir(outpath, 0755)
 
 wd = getcwd()
-list_file = open('%s/test_coco_navinfo_list.txt'%(wd), 'w')
+list_file = open('%s/test_navinfo_list.txt'%(wd), 'w')
 
 """ Get input text file list """
 annos = json.load(open(mypath))
