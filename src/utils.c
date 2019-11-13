@@ -229,6 +229,83 @@ void find_replace(char *str, char *orig, char *rep, char *output)
     sprintf(output, "%s%s%s", buffer, rep, p+strlen(orig));
 }
 
+void trim(char *str)
+{
+    char* buffer = (char*)calloc(8192, sizeof(char));
+    sprintf(buffer, "%s", str);
+
+    char *p = buffer;
+    while (*p == ' ' || *p == '\t') ++p;
+
+    char *end = p + strlen(p) - 1;
+    while (*end == ' ' || *end == '\t') {
+        *end = '\0';
+        --end;
+    }
+    sprintf(str, "%s", p);
+
+    free(buffer);
+}
+
+void find_replace_extension(char *str, char *orig, char *rep, char *output)
+{
+    char* buffer = (char*)calloc(8192, sizeof(char));
+
+    sprintf(buffer, "%s", str);
+    char *p = strstr(buffer, orig);
+    int offset = (p - buffer);
+    int chars_from_end = strlen(buffer) - offset;
+    if (!p || chars_from_end != strlen(orig)) {  // Is 'orig' even in 'str' AND is 'orig' found at the end of 'str'?
+        sprintf(output, "%s", str);
+        free(buffer);
+        return;
+    }
+
+    *p = '\0';
+    sprintf(output, "%s%s%s", buffer, rep, p + strlen(orig));
+    free(buffer);
+}
+
+void replace_image_to_label(const char* input_path, char* output_path)
+{
+    find_replace(input_path, "/images/train2014/", "/labels/train2014/", output_path);    // COCO
+    find_replace(output_path, "/images/val2014/", "/labels/val2014/", output_path);        // COCO
+    find_replace(output_path, "/JPEGImages/", "/labels/", output_path);    // PascalVOC
+    find_replace(output_path, "\\images\\train2014\\", "\\labels\\train2014\\", output_path);    // COCO
+    find_replace(output_path, "\\images\\val2014\\", "\\labels\\val2014\\", output_path);        // COCO
+    find_replace(output_path, "\\JPEGImages\\", "\\labels\\", output_path);    // PascalVOC
+    //find_replace(output_path, "/images/", "/labels/", output_path);    // COCO
+    //find_replace(output_path, "/VOC2007/JPEGImages/", "/VOC2007/labels/", output_path);        // PascalVOC
+    //find_replace(output_path, "/VOC2012/JPEGImages/", "/VOC2012/labels/", output_path);        // PascalVOC
+
+    //find_replace(output_path, "/raw/", "/labels/", output_path);
+    trim(output_path);
+
+    // replace only ext of files
+    find_replace_extension(output_path, ".jpg", ".txt", output_path);
+    find_replace_extension(output_path, ".JPG", ".txt", output_path); // error
+    find_replace_extension(output_path, ".jpeg", ".txt", output_path);
+    find_replace_extension(output_path, ".JPEG", ".txt", output_path);
+    find_replace_extension(output_path, ".png", ".txt", output_path);
+    find_replace_extension(output_path, ".PNG", ".txt", output_path);
+    find_replace_extension(output_path, ".bmp", ".txt", output_path);
+    find_replace_extension(output_path, ".BMP", ".txt", output_path);
+    find_replace_extension(output_path, ".ppm", ".txt", output_path);
+    find_replace_extension(output_path, ".PPM", ".txt", output_path);
+    find_replace_extension(output_path, ".tiff", ".txt", output_path);
+    find_replace_extension(output_path, ".TIFF", ".txt", output_path);
+
+    // Check file ends with txt:
+    if(strlen(output_path) > 4) {
+        char *output_path_ext = output_path + strlen(output_path) - 4;
+        if( strcmp(".txt", output_path_ext) != 0){
+            fprintf(stderr, "Failed to infer label file name (check image extension is supported): %s \n", output_path);
+        }
+    }else{
+        fprintf(stderr, "Label file name is too short: %s \n", output_path);
+    }
+}
+
 float sec(clock_t clocks)
 {
     return (float)clocks/CLOCKS_PER_SEC;

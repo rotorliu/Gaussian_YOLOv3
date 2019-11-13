@@ -9,6 +9,10 @@ using namespace cv;
 
 extern "C" {
 
+struct mat_cv : cv::Mat { int a[0]; };
+struct cap_cv : cv::VideoCapture { int a[0]; };
+struct write_cv : cv::VideoWriter { int a[0]; };
+
 IplImage *image_to_ipl(image im)
 {
     int x,y,c;
@@ -128,6 +132,94 @@ void make_window(char *name, int w, int h, int fullscreen)
         resizeWindow(name, w, h);
         if(strcmp(name, "Demo") == 0) moveWindow(name, 0, 0);
     }
+}
+
+// ====================================================================
+// Image Saving
+// ====================================================================
+extern int stbi_write_png(char const *filename, int w, int h, int comp, const void  *data, int stride_in_bytes);
+extern int stbi_write_jpg(char const *filename, int x, int y, int comp, const void  *data, int quality);
+
+void save_mat_png(cv::Mat img_src, const char *name)
+{
+    cv::Mat img_rgb;
+    if (img_src.channels() >= 3) cv::cvtColor(img_src, img_rgb, cv::COLOR_RGB2BGR);
+    stbi_write_png(name, img_rgb.cols, img_rgb.rows, 3, (char *)img_rgb.data, 0);
+}
+// ----------------------------------------
+
+void save_mat_jpg(cv::Mat img_src, const char *name)
+{
+    cv::Mat img_rgb;
+    if (img_src.channels() >= 3) cv::cvtColor(img_src, img_rgb, cv::COLOR_RGB2BGR);
+    stbi_write_jpg(name, img_rgb.cols, img_rgb.rows, 3, (char *)img_rgb.data, 80);
+}
+// ----------------------------------------
+
+
+void save_cv_png(mat_cv *img_src, const char *name)
+{
+    cv::Mat* img = (cv::Mat* )img_src;
+    save_mat_png(*img, name);
+}
+// ----------------------------------------
+
+void save_cv_jpg(mat_cv *img_src, const char *name)
+{
+    cv::Mat* img = (cv::Mat*)img_src;
+    save_mat_jpg(*img, name);
+}
+// ----------------------------------------
+
+// ====================================================================
+// Show Anchors
+// ====================================================================
+void show_acnhors(int number_of_boxes, int num_of_clusters, float *rel_width_height_array, model anchors_data, int width, int height)
+{
+    cv::Mat labels = cv::Mat(number_of_boxes, 1, CV_32SC1);
+    cv::Mat points = cv::Mat(number_of_boxes, 2, CV_32FC1);
+    cv::Mat centers = cv::Mat(num_of_clusters, 2, CV_32FC1);
+
+    for (int i = 0; i < number_of_boxes; ++i) {
+        points.at<float>(i, 0) = rel_width_height_array[i * 2];
+        points.at<float>(i, 1) = rel_width_height_array[i * 2 + 1];
+    }
+
+    for (int i = 0; i < num_of_clusters; ++i) {
+        centers.at<float>(i, 0) = anchors_data.centers.vals[i][0];
+        centers.at<float>(i, 1) = anchors_data.centers.vals[i][1];
+    }
+
+    for (int i = 0; i < number_of_boxes; ++i) {
+        labels.at<int>(i, 0) = anchors_data.assignments[i];
+    }
+
+    size_t img_size = 700;
+    cv::Mat img = cv::Mat(img_size, img_size, CV_8UC3);
+
+    for (int i = 0; i < number_of_boxes; ++i) {
+        cv::Point pt;
+        pt.x = points.at<float>(i, 0) * img_size / width;
+        pt.y = points.at<float>(i, 1) * img_size / height;
+        int cluster_idx = labels.at<int>(i, 0);
+        int red_id = (cluster_idx * (uint64_t)123 + 55) % 255;
+        int green_id = (cluster_idx * (uint64_t)321 + 33) % 255;
+        int blue_id = (cluster_idx * (uint64_t)11 + 99) % 255;
+        cv::circle(img, pt, 1, CV_RGB(red_id, green_id, blue_id), CV_FILLED, 8, 0);
+        //if(pt.x > img_size || pt.y > img_size) printf("\n pt.x = %d, pt.y = %d \n", pt.x, pt.y);
+    }
+
+    for (int j = 0; j < num_of_clusters; ++j) {
+        cv::Point pt1, pt2;
+        pt1.x = pt1.y = 0;
+        pt2.x = centers.at<float>(j, 0) * img_size / width;
+        pt2.y = centers.at<float>(j, 1) * img_size / height;
+        cv::rectangle(img, pt1, pt2, CV_RGB(255, 255, 255), 1, 8, 0);
+    }
+    save_mat_png(img, "cloud.png");
+    cv::imshow("clusters", img);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
 }
 
 }

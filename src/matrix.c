@@ -88,6 +88,33 @@ matrix copy_matrix(matrix m)
     return c;
 }
 
+float dist(float *x, float *y, int n)
+{
+    //printf(" x0 = %f, x1 = %f, y0 = %f, y1 = %f \n", x[0], x[1], y[0], y[1]);
+    float mw = (x[0] < y[0]) ? x[0] : y[0];
+    float mh = (x[1] < y[1]) ? x[1] : y[1];
+    float inter = mw*mh;
+    float sum = x[0] * x[1] + y[0] * y[1];
+    float un = sum - inter;
+    float iou = inter / un;
+    return 1 - iou;
+}
+
+int closest_center(float *datum, matrix centers)
+{
+    int j;
+    int best = 0;
+    float best_dist = dist(datum, centers.vals[best], centers.cols);
+    for (j = 0; j < centers.rows; ++j) {
+        float new_dist = dist(datum, centers.vals[j], centers.cols);
+        if (new_dist < best_dist) {
+            best_dist = new_dist;
+            best = j;
+        }
+    }
+    return best;
+}
+
 matrix make_matrix(int rows, int cols)
 {
     int i;
@@ -227,6 +254,35 @@ void kmeans_maximization(matrix data, int *assignments, matrix centers)
             }
         }
     }
+}
+
+void copy(float *x, float *y, int n)
+{
+    int i;
+    for (i = 0; i < n; ++i) y[i] = x[i];
+}
+
+int *sample(int n)
+{
+    int i;
+    int* s = (int*)calloc(n, sizeof(int));
+    for (i = 0; i < n; ++i) s[i] = i;
+    for (i = n - 1; i >= 0; --i) {
+        int swap = s[i];
+        int index = rand() % (i + 1);
+        s[i] = s[index];
+        s[index] = swap;
+    }
+    return s;
+}
+
+void random_centers(matrix data, matrix centers) {
+    int i;
+    int *s = sample(data.rows);
+    for (i = 0; i < centers.rows; ++i) {
+        copy(data.vals[s[i]], centers.vals[i], data.cols);
+    }
+    free(s);
 }
 
 model do_kmeans(matrix data, int k)

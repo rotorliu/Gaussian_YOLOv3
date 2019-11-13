@@ -735,6 +735,16 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
     }
 }
 
+int anchors_data_comparator(const float **pa, const float **pb)
+{
+    float *a = (float *)*pa;
+    float *b = (float *)*pb;
+    float diff = b[0] * b[1] - a[0] * a[1];
+    if (diff < 0) return 1;
+    else if (diff > 0) return -1;
+    return 0;
+}
+
 void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int show)
 {
     printf("\n num_of_clusters = %d, width = %d, height = %d \n", num_of_clusters, width, height);
