@@ -24,10 +24,10 @@ def convert(size, box):
     
 """ Configure Paths"""   
 mypath = "/hdd/data/BDD/coco_navinfo/annotations/test.json"         # json file path
-outpath = "/hdd/data/BDD/coco_navinfo/annotations/"   # txt file path
+outpath = "/hdd/data/BDD/coco_navinfo/labels/"   # txt file path
 imgpath = "/hdd/data/BDD/coco_navinfo/images/"   # image file path
-#if not os.path.isdir(outpath):
-    #os.mkdir(outpath, 0755)
+if not os.path.isdir(outpath):
+    os.mkdir(outpath, 0755)
 
 wd = getcwd()
 list_file = open('%s/test_navinfo_list.txt'%(wd), 'w')
