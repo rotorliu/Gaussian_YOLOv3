@@ -142,6 +142,39 @@ static void print_navinfo_detections(FILE *fp, char *image_path, detection *dets
     }
 }
 
+static void print_mtsd_detections(FILE *fp, char *image_path, detection *dets, int num_boxes, int classes, int w, int h)
+{
+    char *mtsd_ids[] = {"complementary" , "information" , "other", "regulatory", "warning"};
+    get_bdd_image_id(image_path);
+    int i, j;
+
+    for(i = 0; i < num_boxes; ++i)
+    {
+        float xmin = dets[i].bbox.x - dets[i].bbox.w/2.;
+        float xmax = dets[i].bbox.x + dets[i].bbox.w/2.;
+        float ymin = dets[i].bbox.y - dets[i].bbox.h/2.;
+        float ymax = dets[i].bbox.y + dets[i].bbox.h/2.;
+
+        if (xmin < 0) xmin = 0;
+        if (ymin < 0) ymin = 0;
+        if (xmax > w) xmax = w;
+        if (ymax > h) ymax = h;
+
+        float bx1 = xmin;
+        float by1 = ymin;
+        float bx2 = xmax;
+        float by2 = ymax;
+
+        for(j = 0; j < classes; ++j)
+        {
+            if (dets[i].prob[j])
+            {
+              fprintf(fp, "\t{\n\t\t\"name\":\"%s\",\n\t\t\"category\":\"%s\",\n\t\t\"bbox\":[%f, %f, %f, %f],\n\t\t\"score\":%f\n\t},\n", image_path, mtsd_ids[j], bx1, by1, bx2, by2, dets[i].prob[j]);
+            }
+        }
+    }
+}
+
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear)
 {
     list *options = read_data_cfg(datacfg);
@@ -533,6 +566,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     int bdd = 0;
     int kitti = 0;
     int navinfo = 0;
+    int mtsd = 0;
     
     if(0==strcmp(type, "coco")){
         if(!outfile) outfile = "coco_results";
@@ -552,6 +586,12 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
         fp = fopen(buff, "w");
         fprintf(fp, "[\n");
         navinfo = 1;
+    } else if(0==strcmp(type, "mtsd")){
+        if(!outfile) outfile = "mtsd_results";
+        snprintf(buff, 1024, "%s/%s.json", prefix, outfile);
+        fp = fopen(buff, "w");
+        fprintf(fp, "[\n");
+        mtsd = 1;
     } else if(0==strcmp(type, "kitti")){
         char buff2[1024];
         if(!outfile) outfile = "kitti_results";
@@ -635,6 +675,8 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
                 print_bdd_detections(fp, path, dets, nboxes, classes, w, h);
             } else if (navinfo){
                 print_navinfo_detections(fp, path, dets, nboxes, classes, w, h);
+            } else if (mtsd){
+                print_mtsd_detections(fp, path, dets, nboxes, classes, w, h);
             } else if (kitti){ 
                 print_kitti_detections(fps, id, dets, nboxes, classes, w, h, outfile, prefix);
             } else {
